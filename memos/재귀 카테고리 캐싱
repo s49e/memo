@@ -1,0 +1,95 @@
+``` java
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+import javax.annotation.PostConstruct;
+import java.util.Set;
+
+@Service
+public class CategoryService {
+
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @PostConstruct
+    public void init() {
+        loadAndCacheAllCategories();
+    }
+
+    @Cacheable("allCategories")
+    public Category findCategoryById(Long id) {
+        return categoryRepository.findById(id).orElse(null);
+    }
+
+    @CachePut(value = "allCategories", key = "#category.id")
+    public Category saveCategory(Category category) {
+        return categoryRepository.save(category);
+    }
+
+    private void loadAndCacheAllCategories() {
+        // 상위 엔티티를 로드
+        Set<Category> allCategories = categoryRepository.findAll();
+        
+        // 캐시에 저장
+        allCategories.forEach(category -> {
+            cacheCategoryAndChildren(category);
+        });
+    }
+
+    private void cacheCategoryAndChildren(Category category) {
+        // 카테고리 및 하위 카테고리 캐시
+        cacheCategory(category);
+
+        // 재귀적으로 하위 카테고리 캐시
+        category.getChildren().forEach(this::cacheCategoryAndChildren);
+    }
+
+    private void cacheCategory(Category category) {
+        // 이 메서드는 캐시에서 데이터를 로드하거나 저장합니다.
+        findCategoryById(category.getId());
+    }
+}
+```
+
+
+```java
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        return new ConcurrentMapCacheManager("allCategories");
+    }
+}
+
+```
+
+```java
+import org.springframework.cache.annotation.CacheEvict;
+
+@Service
+public class CategoryService {
+
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @CacheEvict(value = "allCategories", allEntries = true)
+    public void updateCategory(Category category) {
+        categoryRepository.save(category);
+    }
+}
+
+```
+
+
+``` 
+spring.cache.type=simple
+```
